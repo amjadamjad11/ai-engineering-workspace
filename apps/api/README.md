@@ -2,6 +2,8 @@
 
 **Domain:** Core Backend Modular Monolith  
 **Framework:** NestJS 10.x  
+**ORM:** Prisma 6.x  
+**Database:** PostgreSQL 16+ (Supabase)  
 **Language:** TypeScript  
 **Owner:** Backend Lead (Amjad)  
 **Package Namespace:** `@ai-workspace/api`  
@@ -18,6 +20,8 @@ This directory contains the core backend API for the AI Engineering Workspace pl
 
 ```
 apps/api/
+├── prisma/
+│   └── schema.prisma                             # Definitive Prisma 6 relational schema
 ├── src/
 │   ├── common/
 │   │   ├── filters/
@@ -56,6 +60,12 @@ npm run start:dev --workspace=@ai-workspace/api
 
 # Start in production mode
 npm run start:prod --workspace=@ai-workspace/api
+
+# Validate Prisma schema syntax and relational constraints
+npm run prisma:validate --workspace=@ai-workspace/api
+
+# Generate strongly typed Prisma Client
+npm run prisma:generate --workspace=@ai-workspace/api
 ```
 
 ---
@@ -67,55 +77,39 @@ Copy `.env.example` to `.env`:
 cp apps/api/.env.example apps/api/.env
 ```
 
-| Variable | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `NODE_ENV` | `development \| production \| test` | `development` | Runtime environment |
-| `PORT` | `number` | `4000` | HTTP listening port |
-| `API_PREFIX` | `string` | `api/v1` | Global API route prefix |
-| `CORS_ORIGIN`| `string` | `*` | Allowed CORS origins (comma-separated or `*`) |
-
-All environment variables are validated at boot time via **Zod** (`src/config/env.config.ts`). If an invalid configuration is detected, the server fails fast with explicit error messages before accepting traffic.
+| Variable | Type | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `development \| production \| test` | Runtime environment |
+| `PORT` | `number` (default: 4000) | HTTP listening port |
+| `API_PREFIX` | `string` (default: api/v1) | Global API route prefix |
+| `CORS_ORIGIN`| `string` (default: *) | Allowed CORS origins |
+| `DATABASE_URL`| `string` | Supabase pooled connection string (Port 6543 via Supavisor) |
+| `DIRECT_URL`  | `string` | Supabase direct connection string (Port 5432) for migrations |
+| `SUPABASE_URL`| `string` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | `string` | Supabase anonymous public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | `string` | Supabase service-role key (server-side only) |
 
 ---
 
-## 5. Architectural Standards & Global Pipelines
+## 5. Database Architecture & Multi-Tenant Invariants (Phase 2, Step 2a)
 
-### 5.1. Global ValidationPipe
-Every incoming request is filtered through NestJS `ValidationPipe` configured with:
-* `whitelist: true`: Automatically strips properties not defined in the DTO.
-* `forbidNonWhitelisted: true`: Rejects requests containing unrecognized fields (`400 Bad Request`), preventing mass-assignment attacks.
-* `transform: true`: Automatically converts request payloads into strongly typed DTO class instances.
+The database schema (`prisma/schema.prisma`) enforces multi-tenant integrity at the database engine level:
 
-### 5.2. Standardized Response Envelope
-All successful API responses conform to the shared contract:
-```typescript
-{
-  "success": true,
-  "data": { ... },
-  "meta": null,
-  "error": null
-}
-```
+### 5.1. Relational Integrity Invariants
+1. **Project-Organization Scoping:** `Project` enforces `@@unique([id, organizationId])`. `ProjectMember` references `(projectId, organizationId) -> Project(id, organizationId)`, guaranteeing that a project member can never point to a project belonging to another organization.
+2. **Organization Member Scoping:** `ProjectMember` references `(organizationId, userId) -> OrganizationMember(organizationId, userId)`. A user cannot participate in a project unless they already exist as an active member of that project's organization.
+3. **Task-Project-Organization Scoping:** `Task` references `(projectId, organizationId) -> Project(id, organizationId)`, ensuring tasks are physically impossible to misallocate across tenants.
+4. **Safe Task Assignee Deletion:** `Task` assigns developers via `assigneeMemberId -> ProjectMember.id` (`onDelete: SetNull`). When a member is removed from a project, `assigneeMemberId` is safely nulled without affecting the required `projectId` or `organizationId` columns.
 
-### 5.3. Standardized Error Envelope
-All uncaught exceptions and HTTP errors are formatted uniformly:
-```typescript
-{
-  "success": false,
-  "data": null,
-  "meta": null,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Validation failed for the request payload.",
-    "details": [
-      { "message": "message must not be empty" }
-    ],
-    "timestamp": "2026-11-04T10:44:04.156Z",
-    "path": "/api/v1/health/ping"
-  }
-}
-```
+### 5.2. Native PostgreSQL Enums
+* `UserStatus`: `ACTIVE`, `SUSPENDED`, `INACTIVE`
+* `ProjectStatus`: `PLANNING`, `ACTIVE`, `PAUSED`, `ARCHIVED`, `COMPLETED`
+* `ProjectRole`: `LEAD`, `CONTRIBUTOR`, `VIEWER`
+* `TaskStatus`: `TODO`, `IN_PROGRESS`, `IN_REVIEW`, `BLOCKED`, `DONE`, `CANCELLED`
+* `TaskPriority`: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`
 
-### 5.4. Swagger / OpenAPI Documentation
+---
+
+## 6. Swagger / OpenAPI Documentation
 * Interactive UI: `http://localhost:4000/api/docs`
 * Raw OpenAPI JSON: `http://localhost:4000/api/docs-json`
