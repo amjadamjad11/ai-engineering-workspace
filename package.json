@@ -1,0 +1,17 @@
+{
+  "name": "ai-engineering-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered collaborative software engineering SaaS platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace=@ai-workspace/shared"
+  },
+  "keywords": ["ai", "engineering", "saas", "workspace"],
+  "author": "Amjad",
+  "license": "UNLICENSED"
+}
+
