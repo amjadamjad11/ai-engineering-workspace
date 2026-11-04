@@ -9,4 +9,11 @@ export class AppService {
       timestamp: new Date().toISOString(),
     };
   }
+
+  echoPing(message: string) {
+    return {
+      echo: message,
+      receivedAt: new Date().toISOString(),
+    };
+  }
 }
