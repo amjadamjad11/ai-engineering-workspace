@@ -56,3 +56,4 @@ If Amjad is currently implementing a specific backend endpoint:
 1. We define a typed Mock Adapter interface mirroring `@ai-workspace/shared`.
 2. Mock data returns through the exact `ApiResponse<T>` envelope with realistic artificial latency (150ms).
 3. When Amjad's NestJS endpoint is ready, flipping an environment variable (`NEXT_PUBLIC_USE_MOCKS=false`) points the client to the live API with zero component modifications.
+

@@ -42,3 +42,4 @@
 4. **Interactive Controls:**
    - Command palette (`Cmd+K` / `Ctrl+K`) for workspace-wide quick navigation.
    - Context Inspector slide-over drawer for RAG references.
+
