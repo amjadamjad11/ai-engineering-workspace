@@ -42,17 +42,36 @@
 
 ## Phase 2: Database Design, Migrations & Security Policies
 
-- [ ] Initialize Prisma ORM in `apps/api`.
-- [ ] Write `schema.prisma` mapping the complete database schema:
-  - Identity & Org (`profiles`, `organizations`, `organization_members`, `roles`, `permissions`, `role_permissions`).
-  - Projects (`projects`, `project_members`, `project_settings`, `project_documents`, `project_milestones`).
-  - Tasks (`tasks`, `task_dependencies`, `task_comments`, `task_assignees`).
-  - Communication (`conversations`, `conversation_members`, `messages`, `message_attachments`).
-  - Knowledge & Memory (`knowledge_sources`, `knowledge_chunks` with `vector(1536)`, `engineering_decisions`, `document_versions`).
-  - AI & Agents (`ai_providers`, `ai_models`, `ai_runs`, `ai_usage_records`, `agent_configurations`, `agent_executions`, `ai_approvals`).
-  - Integrations (`integrations`, `github_installations`, `github_repositories`, `github_webhook_events`, `notifications`, `audit_logs`).
-- [ ] Create initial SQL migration for Supabase PostgreSQL.
-- [ ] Enable pgvector extension and create HNSW vector index on `knowledge_chunks(embedding)`.
+- [x] **Step 2a — Prisma 6 Installation & Multi-Tenant Schema Design**
+  - [x] Install `prisma` and `@prisma/client` (v6.19.3).
+  - [x] Write `schema.prisma` with 10 models: `Profile`, `Organization`, `Role`, `Permission`, `RolePermission`, `OrganizationMember`, `Project`, `ProjectMember`, `Task`, `TaskComment`.
+  - [x] Implement composite unique constraints enabling composite FK targets.
+  - [x] Enforce cross-tenant isolation via composite FKs on `ProjectMember` and `Task`.
+  - [x] Prisma schema validated (`prisma validate` ✅).
+  - [x] Prisma Client generated successfully.
+  - [x] TypeScript build passes with 0 errors.
+
+- [x] **Step 2b — PrismaService, PrismaModule & Database Integrity SQL**
+  - [x] Create `src/database/prisma.service.ts` — extends `PrismaClient` with NestJS lifecycle hooks.
+  - [x] Implement graceful degradation: app boots without crash when `DATABASE_URL` is not set.
+  - [x] Add `isDatabaseConnected` getter for health endpoint reporting.
+  - [x] Create `src/database/prisma.module.ts` — `@Global()` module exporting `PrismaService`.
+  - [x] Register `PrismaModule` in `AppModule`.
+  - [x] Update `AppService` to inject `PrismaService` and report DB status in health response.
+  - [x] Add `DATABASE_URL` and `DIRECT_URL` to `env.config.ts` Zod schema.
+  - [x] Document all custom SQL (`trg_validate_task_assignee_project`, `trg_validate_active_org_member`, `chk_role_system_consistency`, `idx_system_role_unique_name`, Supabase auth trigger) in `prisma/custom-migration-sql.md`.
+  - [x] TypeScript build passes with 0 errors.
+  - [x] Health endpoint verified: `GET /api/v1/health` → 200 OK with `"database": "not configured"`.
+
+- [ ] **Step 2c — Initial Database Migration** *(requires Supabase credentials)*
+  - [ ] Add Supabase `DATABASE_URL` and `DIRECT_URL` to `apps/api/.env`.
+  - [ ] Run `prisma migrate dev --create-only` to generate migration SQL.
+  - [ ] Append custom SQL from `prisma/custom-migration-sql.md` to migration file.
+  - [ ] Run `prisma migrate dev` to apply migration.
+  - [ ] Run Supabase auth trigger SQL in Supabase SQL Editor.
+  - [ ] Verify `GET /api/v1/health` returns `"database": "connected"`.
+
+- [ ] Enable pgvector extension and create HNSW vector index (Phase 6 prerequisite).
 - [ ] Implement database seed scripts with default roles and permissions.
 
 ---
