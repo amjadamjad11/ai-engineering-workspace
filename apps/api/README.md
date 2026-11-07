@@ -224,5 +224,41 @@ The `GET /api/v1/health` endpoint now reports database connection status:
 | Phase 1 | Step 2 | Global ValidationPipe, HttpExceptionFilter, response transformer, Swagger | ✅ Complete |
 | Phase 2 | Step 2a | Prisma 6 installation, schema design, multi-tenant composite constraints | ✅ Complete |
 | Phase 2 | Step 2b | PrismaService + PrismaModule, DB integrity SQL documented, env config updated | ✅ Complete |
-| Phase 2 | Step 2c | Initial database migration (requires Supabase credentials) | ⏳ Pending |
+| Phase 2 | Step 2c | Initial database migration generation (local SQL synthesized, wrapped in BEGIN/COMMIT, pending deployment) | ⏳ Generated Locally (Pending Approval) |
 | Phase 3 | — | Authentication module (JwtAuthGuard, OrgTenantGuard, etc.) | ⏳ Pending |
+
+---
+
+## 9. Initial Database Migration Specification (Phase 2, Step 2c)
+
+The initial migration has been synthesized locally in `apps/api/prisma/migrations/20261107120000_init/`:
+
+```
+apps/api/prisma/migrations/
+├── migration_lock.toml              # Identifies provider as "postgresql"
+└── 20261107120000_init/
+    └── migration.sql                # Complete atomic DDL (Prisma baseline + custom triggers)
+```
+
+### 9.1. Transaction & Execution Architecture
+* **Explicit Transaction Boundaries:** The migration is wrapped in explicit `BEGIN;` and `COMMIT;` blocks, guaranteeing that all 10 tables, 6 enums, 16 indexes, 16 foreign keys, 5 triggers, 10 RLS-enabled tables with default-deny behavior and zero client-facing policies, and 2 check/unique constraints deploy atomically. If any statement encounters an error, the entire migration rolls back without leaving partial tables.
+* **All Statements Transaction-Compatible:** Zero non-transactional statements (`CREATE INDEX CONCURRENTLY`, `VACUUM`, `CREATE DATABASE`) are present.
+* **Separation of Supabase Auth Schema:** In accordance with tenant architecture, the Supabase Auth profile synchronization trigger (`on_auth_user_created`) resides on `auth.users` and is managed separately via the Supabase Dashboard SQL Editor, keeping Prisma's migration scope strictly contained to the `public` schema.
+
+### 9.2. Custom PostgreSQL Triggers (5 Triggers)
+The migration includes 5 custom triggers enforcing tenant boundary invariants and immutability:
+1. `trg_prevent_role_ownership_mutation` on `public.roles`: Protects system roles and prevents transferring custom roles between organizations (`BEFORE UPDATE OF organization_id, is_system_role`).
+2. `trg_validate_member_role_org` on `public.organization_members`: Validates that assigned custom roles belong to the same organization, using `FOR SHARE` row locking against concurrent role reassignment (`BEFORE INSERT OR UPDATE OF role_id, organization_id`).
+3. `trg_validate_active_org_member` on `public.project_members`: Validates that users added to projects hold an `ACTIVE` organization membership, using `FOR SHARE` row locking against concurrent status changes (`BEFORE INSERT OR UPDATE OF organization_id, user_id`).
+4. `trg_prevent_project_member_identity_mutation` on `public.project_members`: Enforces complete immutability of `project_id`, `organization_id`, and `user_id` using `IS DISTINCT FROM`, preventing historical task assignment corruption (`BEFORE UPDATE OF project_id, organization_id, user_id`).
+5. `trg_validate_task_assignee_project` on `public.tasks`: Validates that task assignees belong to the same project as the task, using `FOR SHARE` row locking (`BEFORE INSERT OR UPDATE OF assignee_member_id, project_id`).
+
+### 9.3. Row Level Security (RLS) Strategy & Defense-in-Depth
+* **Enabled on All 10 Public Tables:** `ALTER TABLE public.<table_name> ENABLE ROW LEVEL SECURITY;` is executed for all ten tables (`profiles`, `organizations`, `roles`, `permissions`, `role_permissions`, `organization_members`, `projects`, `project_members`, `tasks`, `task_comments`).
+* **Default-Deny for Client SDKs:** Because zero permissive client policies (`CREATE POLICY`) are created, any direct request via PostgREST, Supabase Studio client libraries, or the `anon` / `authenticated` roles is rejected (`DENY ALL`).
+* **No `FORCE ROW LEVEL SECURITY`:** `FORCE ROW LEVEL SECURITY` is intentionally omitted so the database owner connection used by Prisma (`postgres` user) retains unhindered administrative access.
+* **Privilege Revocation:** Direct table privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) are explicitly revoked from `PUBLIC`, `anon`, and `authenticated`. Additionally, `EXECUTE` privileges on all 5 custom trigger functions are revoked from `PUBLIC`, `anon`, and `authenticated`.
+* **NestJS Tenant Guards Remain Mandatory:** RLS provides perimeter defense against direct database exposure via PostgREST. Application-level multi-tenancy authorization and fine-grained data isolation continue to be enforced in the NestJS backend via `JwtAuthGuard`, `OrgTenantGuard`, `ProjectTenantGuard`, and RBAC guards.
+
+### 9.4. Deployment Readiness
+* **Current Status:** Generated and verified locally. **Not yet deployed to Supabase PostgreSQL.** Deployment will occur via `npx prisma migrate deploy` only after explicit user approval.
