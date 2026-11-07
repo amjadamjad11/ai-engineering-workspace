@@ -87,8 +87,8 @@ cp apps/api/.env.example apps/api/.env
 | `PORT` | `number` | No (default: `4000`) | HTTP listening port |
 | `API_PREFIX` | `string` | No (default: `api/v1`) | Global API route prefix |
 | `CORS_ORIGIN` | `string` | No (default: `*`) | Allowed CORS origins |
-| `DATABASE_URL` | `string (URL)` | **Yes** (for DB features) | Supabase Supavisor pooled connection (port **6543**) — used by Prisma Client at runtime |
-| `DIRECT_URL` | `string (URL)` | **Yes** (for migrations) | Supabase direct connection (port **5432**) — used ONLY by `prisma migrate` CLI |
+| `DATABASE_URL` | `string (URL)` | **Yes** (for DB features) | Supabase connection pooler URL (e.g. `aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true`) for application runtime queries |
+| `DIRECT_URL` | `string (URL)` | **Yes** (for migrations) | Migration connection URL: either direct PostgreSQL connection (`db.[project-ref].supabase.co:5432`) or Supabase Session Pooler (`aws-0-[region].pooler.supabase.com:5432`) used by Prisma CLI |
 | `SUPABASE_URL` | `string (URL)` | No | Supabase project REST API URL |
 | `SUPABASE_ANON_KEY` | `string` | No | Supabase anonymous public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `string` | No | Supabase service-role key (server-side only — never expose to client) |
@@ -97,8 +97,13 @@ cp apps/api/.env.example apps/api/.env
 | `ANTHROPIC_API_KEY` | `string` | No | Anthropic Claude API key (AI features only) |
 | `OLLAMA_BASE_URL` | `string (URL)` | No | Ollama local inference server URL (AI features only) |
 
-> **Note on DATABASE_URL vs DIRECT_URL:**  
-> Supabase provides two connection strings. `DATABASE_URL` goes through Supavisor (the connection pooler) on port 6543 — this is what your running application uses. `DIRECT_URL` connects directly to PostgreSQL on port 5432 — this is what `prisma migrate` uses because schema migrations require a persistent, non-pooled connection. Using the pooler URL for migrations can cause intermittent failures.
+> **Note on Connection Types and Hostnames:**
+> It is important to distinguish direct PostgreSQL connections from Supabase Pooler connections based on their hostname and port:
+> - **Direct PostgreSQL (`db.[project-ref].supabase.co:5432`):** Direct database server. Resolves via IPv6. Supports standard DDL and full session features.
+> - **Session Pooler (`aws-0-[region].pooler.supabase.com:5432`):** Supavisor session-mode pooler. Provides IPv4 compatibility for environments where IPv6 is not routed, but client sessions lack dynamic database creation privileges.
+> - **Transaction Pooler (`aws-0-[region].pooler.supabase.com:6543?pgbouncer=true`):** Supavisor transaction-mode pooler. Designed exclusively for high-concurrency application queries (`SELECT`, `INSERT`, `UPDATE`, `DELETE`). Breaks prepared statements across transaction boundaries and cannot be used for migrations.
+>
+> In our configuration, `DATABASE_URL` uses the Transaction Pooler (port 6543). `DIRECT_URL` uses either the Direct connection or Session Pooler (port 5432) to execute migration DDL.
 
 > **Graceful degradation:** When `DATABASE_URL` is not set, the application boots successfully and returns a `"database": "not configured"` status on the health endpoint. This allows health checks and Swagger to work during early development before database credentials are configured.
 
@@ -120,22 +125,26 @@ The database schema (`prisma/schema.prisma`) enforces multi-tenant integrity at 
 
 ### 5.2. Custom SQL Integrity Constraints (applied during initial migration)
 
-Three integrity rules are enforced via raw PostgreSQL SQL added to the initial migration file. These are documented in `prisma/custom-migration-sql.md`:
+The database schema is augmented with production-hardened PostgreSQL triggers, check constraints, and partial unique indexes documented in [`prisma/custom-migration-sql.md`](prisma/custom-migration-sql.md):
 
-| Constraint | Type | Enforcement |
-| :--- | :--- | :--- |
-| Task assignee must belong to task's project | PostgreSQL trigger | `trg_validate_task_assignee_project` |
-| Org member must be `ACTIVE` to join a project | PostgreSQL trigger | `trg_validate_active_org_member` |
-| System roles must have `organizationId = NULL` | CHECK constraint | `chk_role_system_consistency` |
-| System role names must be globally unique | Partial unique index | `idx_system_role_unique_name` |
-| Cross-org role assignment prevention | Application layer | `OrganizationMembersService` guard |
-| Profile auto-created on Supabase user registration | Supabase trigger | `on_auth_user_created` (run in Supabase SQL Editor) |
+| Constraint / Invariant | Database Mechanism | Concurrency Protection | Status |
+| :--- | :--- | :--- | :--- |
+| **Task Assignee Project Boundary** | `trg_validate_task_assignee_project` trigger | Locks referenced `project_members` row with `FOR SHARE` on INSERT / UPDATE of `assignee_member_id` or `project_id`. | Defined in SQL spec (Pending migration) |
+| **Project Member Identity Immutability** | `trg_prevent_project_member_identity_mutation` trigger | Prevents mutating `project_members` identity columns (`project_id`, `organization_id`, `user_id`) on existing rows using `IS DISTINCT FROM`. Eliminates retroactive assignee impersonation and cross-project transfer vulnerabilities while preserving mutable role attributes (e.g. `project_role`). | Defined in SQL spec (Pending migration) |
+| **Active Org Membership Gate** | `trg_validate_active_org_member` trigger | Locks `organization_members` row with `FOR SHARE` on project assignment. Rejects non-`ACTIVE` members. | Defined in SQL spec (Pending migration) |
+| **Role System Consistency** | `chk_role_system_consistency` CHECK constraint | Enforces `(is_system = true AND org IS NULL) OR (is_system = false AND org IS NOT NULL)`. | Defined in SQL spec (Pending migration) |
+| **System Role Name Uniqueness** | `idx_system_role_unique_name` partial index | Unique index on `roles(name) WHERE organization_id IS NULL`. Protects NULL system role names. | Defined in SQL spec (Pending migration) |
+| **Role Ownership Immutability** | `trg_prevent_role_ownership_mutation` trigger | Prevents changing `is_system_role` or transferring `organization_id` on existing roles. | Defined in SQL spec (Pending migration) |
+| **Cross-Tenant Role Assignment Gate** | `trg_validate_member_role_org` trigger | Locks `roles` row with `FOR SHARE`. Verifies custom roles belong to member's organization. | Defined in SQL spec (Pending migration) |
+| **Hardened Profile Sync** | `on_auth_user_created` trigger | `SECURITY DEFINER` with `SET search_path = ''`, sanitized strings, and explicit NOT NULL checks. | Defined in SQL spec (Pending Supabase run) |
+| **Runtime Request Authorization** | NestJS Guards (`OrgTenantGuard`, `ProjectAccessGuard`) | Evaluates active status on every HTTP/WS read and write operation. | **Pending Phase 3/4 implementation** |
 
 ### 5.3. Native PostgreSQL Enums
 
 | Enum | Values |
 | :--- | :--- |
 | `UserStatus` | `ACTIVE`, `SUSPENDED`, `INACTIVE` |
+| `OrgMemberStatus` | `INVITED`, `ACTIVE`, `SUSPENDED`, `INACTIVE` |
 | `ProjectStatus` | `PLANNING`, `ACTIVE`, `PAUSED`, `ARCHIVED`, `COMPLETED` |
 | `ProjectRole` | `LEAD`, `CONTRIBUTOR`, `VIEWER` |
 | `TaskStatus` | `TODO`, `IN_PROGRESS`, `IN_REVIEW`, `BLOCKED`, `DONE`, `CANCELLED` |

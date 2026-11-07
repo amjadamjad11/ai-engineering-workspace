@@ -58,6 +58,15 @@ enum TaskPriority {
   @@map("task_priority")
 }
 
+enum OrgMemberStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+
+  @@map("org_member_status")
+}
+
 // =========================================================================
 // 1. PROFILES (1:1 Mirror of Supabase auth.users)
 // =========================================================================
@@ -154,14 +163,14 @@ model RolePermission {
 // 4. ORGANIZATION MEMBERS (User-Org Mapping)
 // =========================================================================
 model OrganizationMember {
-  id             String    @id @default(uuid()) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  userId         String    @map("user_id") @db.Uuid
-  roleId         String    @map("role_id") @db.Uuid
-  status         String    @default("ACTIVE") @db.VarChar(50)
-  joinedAt       DateTime? @default(now()) @map("joined_at") @db.Timestamptz
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  userId         String          @map("user_id") @db.Uuid
+  roleId         String          @map("role_id") @db.Uuid
+  status         OrgMemberStatus @default(INVITED)
+  joinedAt       DateTime?       @map("joined_at") @db.Timestamptz
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relationships
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
