@@ -1,0 +1,10 @@
+{
+  "name": "@ai-workspace/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend web application for AI Engineering Workspace (Owned by Frontend Founder)",
+  "scripts": {
+    "dev": "echo \"Frontend development placeholder\"",
+    "build": "echo \"Frontend build placeholder\""
+  }
+}
