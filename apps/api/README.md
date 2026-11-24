@@ -224,12 +224,76 @@ The `GET /api/v1/health` endpoint now reports database connection status:
 | Phase 1 | Step 2 | Global ValidationPipe, HttpExceptionFilter, response transformer, Swagger | ✅ Complete |
 | Phase 2 | Step 2a | Prisma 6 installation, schema design, multi-tenant composite constraints | ✅ Complete |
 | Phase 2 | Step 2b | PrismaService + PrismaModule, DB integrity SQL documented, env config updated | ✅ Complete |
-| Phase 2 | Step 2c | Initial database migration generation (local SQL synthesized, wrapped in BEGIN/COMMIT, pending deployment) | ⏳ Generated Locally (Pending Approval) |
-| Phase 3 | — | Authentication module (JwtAuthGuard, OrgTenantGuard, etc.) | ⏳ Pending |
+| Phase 2 | Step 2c | Initial database migration deployed to Supabase PostgreSQL and verified | ✅ Complete |
+| Phase 2 | Step 2d | Supabase Auth profile-sync trigger (`on_auth_user_created`) installed and verified via Gmail test signup | ✅ Complete |
+| Phase 3 | Step 3a | Production Dependency Security Audit and Safe Remediation | 🔄 In Progress |
+| Phase 3 | Step 3b | Authentication module (JwtAuthGuard, OrgTenantGuard, etc.) | ⏳ Pending |
 
 ---
 
-## 9. Initial Database Migration Specification (Phase 2, Step 2c)
+## 9. Production Dependency Security Audit & Remediation (Phase 3, Step 3a)
+
+A security audit was conducted across the `@ai-workspace/api` dependency tree (Node.js 24, npm workspaces). Remediation is in progress.
+
+### 9.1. Current Framework Versions
+- **NestJS:** `@nestjs/core@10.4.22`, `@nestjs/common@10.4.22`, `@nestjs/platform-express@10.4.22`
+- **Prisma:** `prisma@6.19.3`, `@prisma/client@6.19.3`
+- **Zod:** `zod@4.6.7`
+- **jose:** `jose@6.2.18`
+
+### 9.2. Completed: Zod 4 Migration
+Zod was upgraded from `3.25.76` to `4.6.7`, resolving advisory [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (memory exhaustion on oversized constrained collections).
+
+**Changes made:**
+- `apps/api/package.json`: `"zod": "^3.24.1"` → `"zod": "^4.6.7"`.
+- `apps/api/src/config/env.config.ts`: `result.error.errors` → `result.error.issues` (Zod 4 API change).
+
+**Verified:**
+- `npm run build --workspace=@ai-workspace/api` — passed (zero TypeScript errors).
+- `npx prisma validate --schema prisma/schema.prisma` from `apps/api` — passed.
+- Environment validation tested: defaults accepted, optional vars omitted, invalid URLs rejected, invalid PORT rejected, invalid NODE_ENV rejected, error messages use `result.error.issues` with readable path formatting.
+
+### 9.3. Remaining Vulnerabilities (Pending Remediation)
+
+`npm audit --omit=dev` reports **15 vulnerabilities (4 moderate, 11 high)** as of 2026-11-24.
+
+The following production dependencies remain on vulnerable versions. No npm overrides or patches have been applied yet. `npm audit fix --force` has not been run.
+
+| Package | Installed Version | Severity | Advisory IDs | Upstream Source |
+| :--- | :--- | :--- | :--- | :--- |
+| `body-parser` | `1.20.4` | High | GHSA-v422-hmwv-36x6, GHSA-27r3-jxmh-p828 | `@nestjs/platform-express@10.4.22` |
+| `multer` | `2.0.2` | High | GHSA-xf7r-hgr6-v32p, GHSA-v52c-386h-88mc, GHSA-5528-5vmv-3xc2, GHSA-72gw-mp4g-v24j, GHSA-3p4h-7m6x-2hcm, GHSA-wc9g-mqfw-jrwm, GHSA-qvfw-j98x-7q72, GHSA-535w-7cp7-47q4, GHSA-q7qp-rjg7-q26m | `@nestjs/platform-express@10.4.22` |
+| `lodash` | `4.17.21` | High | GHSA-r5fr-rjxr-66jc, GHSA-xxjr-mmjv-4gpg | `@nestjs/config@3.3.0`, `@nestjs/swagger@7.4.2` |
+| `js-yaml` | `4.1.0` | High | GHSA-mh29-5h37-fv8m, GHSA-h67p-54hq-rp68, GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh | `@nestjs/swagger@7.4.2` |
+| `qs` | `6.14.3` | Moderate | GHSA-q8mj-m7cp-5q26, GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g, GHSA-6pq8-jhm2-2vcw | `body-parser`, `express@4.22.1` |
+| `file-type` | `20.4.1` | Moderate | GHSA-5v7r-6r5c-r473, GHSA-j47w-4g3g-c36v | `@nestjs/common@10.4.22` |
+| `deepmerge-ts` | `7.1.5` | High | GHSA-ggr8-5vv4-36mx | `@prisma/config@6.19.3` via `prisma@6.19.3` |
+| `effect` | `3.21.0` | High | GHSA-7589-6fvf-x4pw | `@prisma/config@6.19.3` via `prisma@6.19.3` |
+| `@nestjs/core` | `10.4.22` | Moderate | GHSA-36xv-jgw5-4q75 | Direct dependency (retained on NestJS 10; fix requires NestJS 12) |
+
+### 9.4. Constraints & Next Steps
+- **NestJS 10 retained.** Advisory GHSA-36xv-jgw5-4q75 is only resolved in `@nestjs/core@12.6.0`. Upgrading to NestJS 12 is a major breaking change.
+- **Prisma 6 retained.** `deepmerge-ts` and `effect` vulnerabilities are transitive via `@prisma/config@6.19.3`.
+- **Dev-only advisories excluded.** `npm audit --omit=dev` excludes `@nestjs/cli`, `ajv`, `glob`, `minimatch`, `picomatch`, `tmp`, and `webpack` (build-time only, not shipped in production).
+- **Pending:** Evaluate npm `overrides` for safe semver-compatible patches to transitive dependencies (`body-parser`, `multer`, `lodash`, `js-yaml`, `qs`, `file-type`, `deepmerge-ts`, `effect`) without breaking NestJS 10 or Prisma 6.
+
+### 9.5. Verification Commands
+Run from the repository root:
+
+```bash
+# Audit production dependencies only
+npm audit --omit=dev
+
+# Build and validate
+npm run build:shared
+npm run prisma:validate --workspace=@ai-workspace/api
+npm run prisma:generate --workspace=@ai-workspace/api
+npm run build --workspace=@ai-workspace/api
+```
+
+---
+
+## 10. Initial Database Migration Specification (Phase 2, Step 2c)
 
 The initial migration has been synthesized locally in `apps/api/prisma/migrations/20261107120000_init/`:
 
@@ -240,12 +304,12 @@ apps/api/prisma/migrations/
     └── migration.sql                # Complete atomic DDL (Prisma baseline + custom triggers)
 ```
 
-### 9.1. Transaction & Execution Architecture
+### 10.1. Transaction & Execution Architecture
 * **Explicit Transaction Boundaries:** The migration is wrapped in explicit `BEGIN;` and `COMMIT;` blocks, guaranteeing that all 10 tables, 6 enums, 16 indexes, 16 foreign keys, 5 triggers, 10 RLS-enabled tables with default-deny behavior and zero client-facing policies, and 2 check/unique constraints deploy atomically. If any statement encounters an error, the entire migration rolls back without leaving partial tables.
 * **All Statements Transaction-Compatible:** Zero non-transactional statements (`CREATE INDEX CONCURRENTLY`, `VACUUM`, `CREATE DATABASE`) are present.
 * **Separation of Supabase Auth Schema:** In accordance with tenant architecture, the Supabase Auth profile synchronization trigger (`on_auth_user_created`) resides on `auth.users` and is managed separately via the Supabase Dashboard SQL Editor, keeping Prisma's migration scope strictly contained to the `public` schema.
 
-### 9.2. Custom PostgreSQL Triggers (5 Triggers)
+### 10.2. Custom PostgreSQL Triggers (5 Triggers)
 The migration includes 5 custom triggers enforcing tenant boundary invariants and immutability:
 1. `trg_prevent_role_ownership_mutation` on `public.roles`: Protects system roles and prevents transferring custom roles between organizations (`BEFORE UPDATE OF organization_id, is_system_role`).
 2. `trg_validate_member_role_org` on `public.organization_members`: Validates that assigned custom roles belong to the same organization, using `FOR SHARE` row locking against concurrent role reassignment (`BEFORE INSERT OR UPDATE OF role_id, organization_id`).
@@ -253,12 +317,12 @@ The migration includes 5 custom triggers enforcing tenant boundary invariants an
 4. `trg_prevent_project_member_identity_mutation` on `public.project_members`: Enforces complete immutability of `project_id`, `organization_id`, and `user_id` using `IS DISTINCT FROM`, preventing historical task assignment corruption (`BEFORE UPDATE OF project_id, organization_id, user_id`).
 5. `trg_validate_task_assignee_project` on `public.tasks`: Validates that task assignees belong to the same project as the task, using `FOR SHARE` row locking (`BEFORE INSERT OR UPDATE OF assignee_member_id, project_id`).
 
-### 9.3. Row Level Security (RLS) Strategy & Defense-in-Depth
+### 10.3. Row Level Security (RLS) Strategy & Defense-in-Depth
 * **Enabled on All 10 Public Tables:** `ALTER TABLE public.<table_name> ENABLE ROW LEVEL SECURITY;` is executed for all ten tables (`profiles`, `organizations`, `roles`, `permissions`, `role_permissions`, `organization_members`, `projects`, `project_members`, `tasks`, `task_comments`).
 * **Default-Deny for Client SDKs:** Because zero permissive client policies (`CREATE POLICY`) are created, any direct request via PostgREST, Supabase Studio client libraries, or the `anon` / `authenticated` roles is rejected (`DENY ALL`).
 * **No `FORCE ROW LEVEL SECURITY`:** `FORCE ROW LEVEL SECURITY` is intentionally omitted so the database owner connection used by Prisma (`postgres` user) retains unhindered administrative access.
 * **Privilege Revocation:** Direct table privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) are explicitly revoked from `PUBLIC`, `anon`, and `authenticated`. Additionally, `EXECUTE` privileges on all 5 custom trigger functions are revoked from `PUBLIC`, `anon`, and `authenticated`.
 * **NestJS Tenant Guards Remain Mandatory:** RLS provides perimeter defense against direct database exposure via PostgREST. Application-level multi-tenancy authorization and fine-grained data isolation continue to be enforced in the NestJS backend via `JwtAuthGuard`, `OrgTenantGuard`, `ProjectTenantGuard`, and RBAC guards.
 
-### 9.4. Deployment Readiness
-* **Current Status:** Generated and verified locally. **Not yet deployed to Supabase PostgreSQL.** Deployment will occur via `npx prisma migrate deploy` only after explicit user approval.
+### 10.4. Deployment Status
+* **Current Status:** Successfully deployed to Supabase PostgreSQL via `npx prisma migrate deploy`. All 10 tables, 6 enums, 16 indexes, 16 foreign keys, 5 triggers, RLS on all 10 tables, and privilege revocations were applied atomically. The Supabase Auth profile synchronization trigger (`on_auth_user_created`) was installed separately via the Supabase SQL Editor and verified with a Gmail test signup that created a matching `public.profiles` row with the correct UUID.
