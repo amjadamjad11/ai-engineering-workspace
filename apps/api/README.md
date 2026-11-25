@@ -227,7 +227,8 @@ The `GET /api/v1/health` endpoint now reports database connection status:
 | Phase 2 | Step 2c | Initial database migration deployed to Supabase PostgreSQL and verified | ✅ Complete |
 | Phase 2 | Step 2d | Supabase Auth profile-sync trigger (`on_auth_user_created`) installed and verified via Gmail test signup | ✅ Complete |
 | Phase 3 | Step 3a | Production Dependency Security Audit and Safe Remediation | 🔄 In Progress |
-| Phase 3 | Step 3b | Authentication module (JwtAuthGuard, OrgTenantGuard, etc.) | ⏳ Pending |
+| Phase 3 | Step 3b | Supabase ES256 JWT Authentication Foundation (AuthService, JwtAuthGuard, AuthModule) | ✅ Complete |
+| Phase 3 | Step 3c | Multi-Tenant Authorization Guards (OrgTenantGuard, ProjectTenantGuard, RolesGuard) | ⏳ Pending |
 
 ---
 
@@ -293,7 +294,63 @@ npm run build --workspace=@ai-workspace/api
 
 ---
 
-## 10. Initial Database Migration Specification (Phase 2, Step 2c)
+## 10. Supabase ES256 JWT Authentication Foundation (Phase 3, Step 3b)
+
+Phase 3 Step 3b establishes the stateless cryptographic authentication foundation for `@ai-workspace/api` using Supabase Auth asymmetric JSON Web Tokens (JWT).
+
+### 10.1. Architecture & Security Implementation
+- **Asymmetric ES256 Verification:** Supabase Auth tokens are signed using ECC P-256. Cryptographic verification is handled exclusively via `jose@6.2.18` enforcing `algorithms: ['ES256']`. Symmetric HMAC (`HS256`), `none`, and `SUPABASE_JWT_SECRET` are never used or trusted.
+- **Remote JWKS Endpoint:** Public keys are fetched from `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` using `createRemoteJWKSet()` with in-memory caching (`cacheMaxAge: 10m`) and rotation cooldown (`cooldownDuration: 30s`).
+- **Claim Validations:**
+  - **Issuer:** Strictly validated against `${SUPABASE_URL}/auth/v1`.
+  - **Audience:** Strictly validated against `authenticated`.
+  - **Expiration:** Validated automatically by `jwtVerify`.
+  - **Subject (`sub`):** Validated against a strict UUID format (`/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/`).
+- **Hardened Bearer Extraction:**
+  - Evaluates authorization headers with strict regex matching: `/^Bearer[ \t]+(\S+)$/i`.
+  - Case-insensitive scheme (`bearer`, `Bearer`, `BEARER`).
+  - Supports multiple space and tab whitespace separators.
+  - Rejects missing, empty, or extra-token headers (`Bearer <token> extra`).
+  - Fails closed on duplicate `Authorization` headers (array types) by rejecting non-string inputs.
+- **Error Boundaries:**
+  - **HTTP 401 Unauthorized:** Missing, empty, malformed, expired, invalid-signature tokens, or invalid claims.
+  - **HTTP 503 Service Unavailable:** Upstream JWKS network/fetch unavailability when a valid cached key is absent.
+  - **HTTP 500 Internal Server Error:** Missing server configuration (`SUPABASE_URL`) returns a safe generic message without leaking secrets.
+- **Zero Sensitive Logging:** Bearer tokens, secrets, and raw Authorization headers are never logged.
+- **Stateless Separation:** No database access or Prisma queries occur during JWT verification. Database profile status and tenant checks are strictly decoupled for downstream authorization guards (Step 3c).
+- **Scope:** `JwtAuthGuard` is exported by `AuthModule` for explicit controller/route decoration and is **not registered globally**.
+
+### 10.2. Components & Artifacts
+- `AuthService` (`apps/api/src/auth/auth.service.ts`): Reusable remote JWKS resolver and token verification engine.
+- `JwtAuthGuard` (`apps/api/src/auth/guards/jwt-auth.guard.ts`): CanActivate guard extracting Bearer tokens and attaching verified identities to `request.user`. Respects `@Public()` metadata.
+- `AuthModule` (`apps/api/src/auth/auth.module.ts`): Registers and exports `AuthService` and `JwtAuthGuard`; imported into `AppModule`.
+- `@Public()` (`apps/api/src/auth/decorators/public.decorator.ts`): Custom decorator marking public routes (`isPublic` metadata).
+- `@CurrentUser()` (`apps/api/src/auth/decorators/current-user.decorator.ts`): Custom parameter decorator extracting verified user context or sub-properties from `request.user`.
+- `AuthenticatedUser` (`apps/api/src/auth/interfaces/authenticated-user.interface.ts`): Readonly interface (`id: string`, optional `email?: string`, optional `role?: string`, `appMetadata: Readonly<Record<string, unknown>>`, `userMetadata: Readonly<Record<string, unknown>>`) with frozen empty-object defaults.
+
+### 10.3. Verification & Test Suite
+Unit tests are implemented natively using Node.js's built-in test runner in `apps/api/test/auth.test.js`, testing with ephemeral in-memory P-256 keypairs with zero network or database dependencies:
+- **Test execution:** `node --test apps/api/test/auth.test.js`
+- **Result:** **14 passing, 0 failing** (0 errors).
+- **Scenarios covered:**
+  1. Valid ES256 token verification & guard attachment.
+  2. Untrusted / invalid P-256 signature rejection.
+  3. Expired token rejection.
+  4. Wrong issuer rejection.
+  5. Wrong audience rejection.
+  6. Unsupported algorithm (HS256) rejection.
+  7. Invalid UUID subject rejection.
+  8. Missing / malformed Bearer token rejection.
+  8b. Bearer token whitespace variants (multiple spaces, tabs, case-insensitivity) acceptance.
+  9. `@Public()` route bypass.
+  10. Missing `SUPABASE_URL` configuration safe 500.
+  11. JWKS network/fetch failure 503 Service Unavailable.
+  12. Missing email and metadata safe defaults (frozen objects).
+- **Build verification:** `npm run build --workspace=@ai-workspace/api` passed with zero TypeScript errors.
+
+---
+
+## 11. Initial Database Migration Specification (Phase 2, Step 2c)
 
 The initial migration has been synthesized locally in `apps/api/prisma/migrations/20261107120000_init/`:
 
@@ -304,12 +361,12 @@ apps/api/prisma/migrations/
     └── migration.sql                # Complete atomic DDL (Prisma baseline + custom triggers)
 ```
 
-### 10.1. Transaction & Execution Architecture
-* **Explicit Transaction Boundaries:** The migration is wrapped in explicit `BEGIN;` and `COMMIT;` blocks, guaranteeing that all 10 tables, 6 enums, 16 indexes, 16 foreign keys, 5 triggers, 10 RLS-enabled tables with default-deny behavior and zero client-facing policies, and 2 check/unique constraints deploy atomically. If any statement encounters an error, the entire migration rolls back without leaving partial tables.
+### 11.1. Transaction & Execution Architecture
+* **Explicit Transaction Boundaries:** The migration is wrapped in explicit `BEGIN;` and `COMMIT;` blocks, guaranteeing that all 10 tables, 6 enums, 19 indexes, 17 foreign keys, 5 triggers, 10 RLS-enabled tables with default-deny behavior and zero client-facing policies, and 2 check/unique constraints deploy atomically. If any statement encounters an error, the entire migration rolls back without leaving partial tables.
 * **All Statements Transaction-Compatible:** Zero non-transactional statements (`CREATE INDEX CONCURRENTLY`, `VACUUM`, `CREATE DATABASE`) are present.
 * **Separation of Supabase Auth Schema:** In accordance with tenant architecture, the Supabase Auth profile synchronization trigger (`on_auth_user_created`) resides on `auth.users` and is managed separately via the Supabase Dashboard SQL Editor, keeping Prisma's migration scope strictly contained to the `public` schema.
 
-### 10.2. Custom PostgreSQL Triggers (5 Triggers)
+### 11.2. Custom PostgreSQL Triggers (5 Triggers)
 The migration includes 5 custom triggers enforcing tenant boundary invariants and immutability:
 1. `trg_prevent_role_ownership_mutation` on `public.roles`: Protects system roles and prevents transferring custom roles between organizations (`BEFORE UPDATE OF organization_id, is_system_role`).
 2. `trg_validate_member_role_org` on `public.organization_members`: Validates that assigned custom roles belong to the same organization, using `FOR SHARE` row locking against concurrent role reassignment (`BEFORE INSERT OR UPDATE OF role_id, organization_id`).
@@ -317,12 +374,12 @@ The migration includes 5 custom triggers enforcing tenant boundary invariants an
 4. `trg_prevent_project_member_identity_mutation` on `public.project_members`: Enforces complete immutability of `project_id`, `organization_id`, and `user_id` using `IS DISTINCT FROM`, preventing historical task assignment corruption (`BEFORE UPDATE OF project_id, organization_id, user_id`).
 5. `trg_validate_task_assignee_project` on `public.tasks`: Validates that task assignees belong to the same project as the task, using `FOR SHARE` row locking (`BEFORE INSERT OR UPDATE OF assignee_member_id, project_id`).
 
-### 10.3. Row Level Security (RLS) Strategy & Defense-in-Depth
+### 11.3. Row Level Security (RLS) Strategy & Defense-in-Depth
 * **Enabled on All 10 Public Tables:** `ALTER TABLE public.<table_name> ENABLE ROW LEVEL SECURITY;` is executed for all ten tables (`profiles`, `organizations`, `roles`, `permissions`, `role_permissions`, `organization_members`, `projects`, `project_members`, `tasks`, `task_comments`).
 * **Default-Deny for Client SDKs:** Because zero permissive client policies (`CREATE POLICY`) are created, any direct request via PostgREST, Supabase Studio client libraries, or the `anon` / `authenticated` roles is rejected (`DENY ALL`).
 * **No `FORCE ROW LEVEL SECURITY`:** `FORCE ROW LEVEL SECURITY` is intentionally omitted so the database owner connection used by Prisma (`postgres` user) retains unhindered administrative access.
 * **Privilege Revocation:** Direct table privileges (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) are explicitly revoked from `PUBLIC`, `anon`, and `authenticated`. Additionally, `EXECUTE` privileges on all 5 custom trigger functions are revoked from `PUBLIC`, `anon`, and `authenticated`.
-* **NestJS Tenant Guards Remain Mandatory:** RLS provides perimeter defense against direct database exposure via PostgREST. Application-level multi-tenancy authorization and fine-grained data isolation continue to be enforced in the NestJS backend via `JwtAuthGuard`, `OrgTenantGuard`, `ProjectTenantGuard`, and RBAC guards.
+* **NestJS Tenant Guards Remain Mandatory:** RLS provides perimeter defense against direct database exposure via PostgREST. Application-level multi-tenancy authorization and fine-grained data isolation are part of the planned NestJS enforcement architecture. JwtAuthGuard is implemented in Phase 3 Step 3b; OrgTenantGuard, ProjectTenantGuard, and RBAC guards are planned for Phase 3 Step 3c and are not yet implemented.
 
-### 10.4. Deployment Status
-* **Current Status:** Successfully deployed to Supabase PostgreSQL via `npx prisma migrate deploy`. All 10 tables, 6 enums, 16 indexes, 16 foreign keys, 5 triggers, RLS on all 10 tables, and privilege revocations were applied atomically. The Supabase Auth profile synchronization trigger (`on_auth_user_created`) was installed separately via the Supabase SQL Editor and verified with a Gmail test signup that created a matching `public.profiles` row with the correct UUID.
+### 11.4. Deployment Status
+* **Current Status:** Successfully deployed to Supabase PostgreSQL via `npx prisma migrate deploy`. All 10 tables, 6 enums, 19 indexes, 17 foreign keys, 5 triggers, RLS on all 10 tables, and privilege revocations were applied atomically. The Supabase Auth profile synchronization trigger (`on_auth_user_created`) was installed separately via the Supabase SQL Editor and verified with a Gmail test signup that created a matching `public.profiles` row with the correct UUID.

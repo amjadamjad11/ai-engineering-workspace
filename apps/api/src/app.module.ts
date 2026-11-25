@@ -4,6 +4,7 @@ import { validateEnv } from './config/env.config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './database/prisma.module';
+import { AuthModule } from './auth/auth.module';
 
 /**
  * AppModule — Root Application Module
@@ -23,8 +24,9 @@ import { PrismaModule } from './database/prisma.module';
  *                    PrismaModule makes PrismaService available everywhere without
  *                    additional imports in feature modules.
  *
+ * 3. AuthModule    — Provides authentication services and guards (Phase 3 Step 3b).
+ *
  * Future modules will be added here as we implement each phase:
- *   Phase 3: AuthModule
  *   Phase 4: OrganizationsModule, ProjectsModule
  *   Phase 5: TasksModule, ConversationsModule
  *   Phase 6+: AiModule, AgentsModule, McpModule, GithubModule
@@ -42,6 +44,9 @@ import { PrismaModule } from './database/prisma.module';
     // PrismaModule: Establishes and manages the PostgreSQL database connection.
     // @Global() on PrismaModule means PrismaService is injectable application-wide.
     PrismaModule,
+
+    // AuthModule: Provides asymmetric ES256 Supabase JWT verification
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
