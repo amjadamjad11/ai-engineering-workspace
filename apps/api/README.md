@@ -383,3 +383,46 @@ The migration includes 5 custom triggers enforcing tenant boundary invariants an
 
 ### 11.4. Deployment Status
 * **Current Status:** Successfully deployed to Supabase PostgreSQL via `npx prisma migrate deploy`. All 10 tables, 6 enums, 19 indexes, 17 foreign keys, 5 triggers, RLS on all 10 tables, and privilege revocations were applied atomically. The Supabase Auth profile synchronization trigger (`on_auth_user_created`) was installed separately via the Supabase SQL Editor and verified with a Gmail test signup that created a matching `public.profiles` row with the correct UUID.
+
+---
+
+## 12. Service Unavailable Error Contract & Safe Database Error Mapping (Phase 3, Step 3c - Slice 1)
+
+As part of the initial authorization foundation for Phase 3 Step 3c, the shared error envelope and global exception filter were enhanced to support safe `SERVICE_UNAVAILABLE` mapping without exposing internal database details:
+
+### 12.1. Shared Error Contract
+- `ApiErrorCode.SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE'` added to `packages/shared/src/contracts/api-response.contract.ts`.
+- Mapped in `HttpExceptionFilter` when `HttpStatus.SERVICE_UNAVAILABLE` (503) is encountered.
+
+### 12.2. Prisma Connectivity Error Mapping
+Prisma exceptions are intercepted in the global `HttpExceptionFilter` (`apps/api/src/common/filters/http-exception.filter.ts`). Only verified temporary infrastructure and connectivity failures are mapped to HTTP 503:
+- **`PrismaClientKnownRequestError` with verified connectivity codes:**
+  - `P1001`: Can't reach database server (network partition, host down, DNS unreachable).
+  - `P1002`: Database server reached but connection timed out during handshake.
+  - `P1017`: Server has closed the connection (backend restart, socket severed).
+  - `P2024`: Timed out trying to acquire a connection from the pool (pool starvation).
+- **`PrismaClientInitializationError` with verified connectivity code:**
+  - Mapped to 503 only when its actual `errorCode` is in `{ P1001, P1002, P1017 }`.
+  - Initialization errors without a verified connectivity code (or missing code) fall through to 500.
+
+**Explicitly excluded from 503:**
+- `P1000` (authentication failed / invalid database credentials): permanent configuration error, mapped to 500.
+- `P1008` (operations timed out / statement timeout): query performance/timeout concern, mapped to 500.
+- `PrismaClientRustPanicError` (native query engine crash): internal engine crash, mapped to sanitized 500.
+- Data and domain constraint errors (`P2002`, `P2003`, `P2025`): fall through to standard application error handling.
+- Unknown Prisma error codes (e.g. `P9999`) and duck-typed objects with forged `code` properties: fall through to 500.
+
+### 12.3. Zero Leakage of Database Internals & Sanitized Logging
+Responses and server logs for all database exceptions are strictly sanitized:
+- **Client responses for connectivity failures (503):**
+  - HTTP Status: `503 Service Unavailable`
+  - Code: `SERVICE_UNAVAILABLE`
+  - Message: `"Database service is temporarily unavailable. Please retry shortly."`
+- **Client responses for other database failures (500):**
+  - HTTP Status: `500 Internal Server Error`
+  - Code: `INTERNAL_SERVER_ERROR`
+  - Message: `"An unexpected internal server error occurred."`
+- **Comprehensive Server-Side Logging Security:**
+  - All recognized Prisma exceptions (`PrismaClientKnownRequestError`, `PrismaClientUnknownRequestError`, `PrismaClientRustPanicError`, `PrismaClientInitializationError`, `PrismaClientValidationError`) are intercepted by a dedicated handler before the generic `instanceof Error` fallback.
+  - Raw `exception.message`, database connection URLs, usernames, passwords, SQL statements, query parameters, and stack traces are **never** logged on ANY Prisma exception path.
+  - Logs capture strictly safe metadata: a fixed message, a verified Prisma error code if available (e.g., `code: P1001`, `code: P1000`), and a safe error category (`known request error`, `initialization error`, `engine panic`, etc.).
