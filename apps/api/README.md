@@ -448,3 +448,45 @@ As part of the multi-tenant authorization guard chain, `UserStatusGuard` verifie
 - Zero logging of PII, email, profile metadata, or token claims.
 - Database connectivity failures are allowed to bubble directly to `HttpExceptionFilter` (yielding HTTP 503 rather than false authorization failure or silent bypass).
 - **Scope Notice:** This guard verifies account status only. Tenant (`OrgTenantGuard`), project (`ProjectTenantGuard`), and granular RBAC guards are part of subsequent Step 3c slices and are not yet implemented. This guard is not globally registered.
+
+---
+
+## 14. Organization Tenant Boundary Guard (Phase 3, Step 3c - Slice 3)
+
+As part of the multi-tenant isolation layer, `OrgTenantGuard` enforces top-level tenant boundaries by verifying that the authenticated caller holds an active membership in the requested organization:
+
+### 14.1. Architecture & Execution
+- **Location:** `apps/api/src/auth/guards/org-tenant.guard.ts`
+- **Context Contract:** `apps/api/src/auth/interfaces/org-context.interface.ts` (`OrgContext`)
+- **Dependency Injection:** Injects `Reflector` and `PrismaService`. Exported via `AuthModule`.
+- **Public Route Bypass:** Respects `@Public()` metadata. If present, bypasses tenant checks without attaching false organization context.
+- **Fail-Closed on Unauthenticated Context:** Rejects requests with missing or invalid `request.user` with `401 Unauthorized` without querying the database.
+- **Route Parameter Resolution:** Resolves organization ID exclusively from route parameters (`:orgId` or `:organizationId`). Request bodies, query parameters, and custom headers are strictly ignored and cannot override tenant context.
+- **UUID Pre-Validation:** Validates route parameter against UUID v4 regex before issuing database queries; invalid or missing IDs fail immediately with `404 Not Found`.
+
+### 14.2. Active Membership Enforcement & Non-Disclosure
+- **Database Query:** Uses composite unique constraint `findUnique({ where: { uq_org_member: { organizationId, userId } } })`.
+- **Soft-Delete Protection:** Inspects `organization.deletedAt`. Rejects soft-deleted organizations with `404 Not Found`.
+- **Cross-Tenant Non-Disclosure:** If the caller has no membership record for the organization ID, returns `404 Not Found` (identical to non-existent organization), preventing callers from discovering organization existence across tenant boundaries.
+- **Membership Status:** Requires `member.status === OrgMemberStatus.ACTIVE`. Rejects `INVITED`, `SUSPENDED`, or `INACTIVE` memberships with `403 Forbidden` (`"Organization membership is inactive or unauthorized."`).
+
+### 14.3. Verified Request Context (`request.orgContext`)
+Upon successful authorization, attaches an immutable, frozen `OrgContext` to the request object:
+```typescript
+request.orgContext = Object.freeze({
+  organizationId: string,
+  organizationMemberId: string,
+  roleId: string,
+  roleName: string,
+  isSystemRole: boolean,
+});
+```
+This verified context serves as the trusted source of tenant and role identity for downstream guards (`PermissionsGuard`, `ProjectTenantGuard`) and controllers, eliminating duplicate database lookups.
+
+### 14.4. Intended Guard Composition & Current Enforcement Coverage
+- **Intended Pipeline Order:**
+  1. `JwtAuthGuard`: Verifies ES256 JWT, sets `request.user`.
+  2. `UserStatusGuard`: Verifies user profile `status === ACTIVE`.
+  3. `OrgTenantGuard`: Resolves route `:orgId`, verifies active membership, sets `request.orgContext`.
+  4. `PermissionsGuard` / `ProjectTenantGuard`: Evaluates permissions and project ACLs.
+- **Current Enforcement Coverage:** `OrgTenantGuard` is registered and exported from `AuthModule` as an isolated, composable component. It is **not registered globally** and is **not yet bound to nonexistent feature controllers**. Project access, task execution, RBAC enforcement, and ownership transfer logic belong to subsequent slices.
