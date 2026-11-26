@@ -1,4 +1,4 @@
-# @ai-workspace/api — Backend Application
+﻿# @ai-workspace/api â€” Backend Application
 
 **Domain:** Core Backend Modular Monolith  
 **Framework:** NestJS 10.x  
@@ -20,33 +20,33 @@ This directory contains the core backend API for the AI Engineering Workspace pl
 
 ```
 apps/api/
-├── prisma/
-│   ├── schema.prisma                             # Definitive Prisma 6 relational schema
-│   └── custom-migration-sql.md                   # Raw SQL triggers & constraints appended to initial migration
-├── src/
-│   ├── common/
-│   │   ├── filters/
-│   │   │   └── http-exception.filter.ts         # Global exception filter (ApiErrorResponse envelope)
-│   │   └── interceptors/
-│   │       └── transform-response.interceptor.ts # Global response transformer (ApiResponse envelope)
-│   ├── config/
-│   │   ├── env.config.ts                         # Zod-validated environment schema
-│   │   └── swagger.config.ts                     # OpenAPI / Swagger configuration
-│   ├── database/
-│   │   ├── prisma.service.ts                     # PrismaClient wrapper with NestJS lifecycle hooks
-│   │   └── prisma.module.ts                      # Global NestJS module exporting PrismaService
-│   ├── dto/
-│   │   └── ping.dto.ts                           # Sample validated DTO
-│   ├── app.controller.ts                         # Root controller (/api/v1/health & /ping)
-│   ├── app.module.ts                             # Root NestJS application module
-│   ├── app.service.ts                            # Service providing health status & ping echo
-│   └── main.ts                                   # Application bootstrap & global pipeline setup
-├── .env.example                                  # Documented environment variables template
-├── nest-cli.json                                 # NestJS CLI build and schematic configuration
-├── package.json                                  # Backend scripts & dependencies
-├── tsconfig.json                                 # TypeScript compiler configuration (decorators enabled)
-├── tsconfig.build.json                           # Production build TypeScript configuration
-└── README.md
+â”œâ”€â”€ prisma/
+â”‚   â”œâ”€â”€ schema.prisma                             # Definitive Prisma 6 relational schema
+â”‚   â””â”€â”€ custom-migration-sql.md                   # Raw SQL triggers & constraints appended to initial migration
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ common/
+â”‚   â”‚   â”œâ”€â”€ filters/
+â”‚   â”‚   â”‚   â””â”€â”€ http-exception.filter.ts         # Global exception filter (ApiErrorResponse envelope)
+â”‚   â”‚   â””â”€â”€ interceptors/
+â”‚   â”‚       â””â”€â”€ transform-response.interceptor.ts # Global response transformer (ApiResponse envelope)
+â”‚   â”œâ”€â”€ config/
+â”‚   â”‚   â”œâ”€â”€ env.config.ts                         # Zod-validated environment schema
+â”‚   â”‚   â””â”€â”€ swagger.config.ts                     # OpenAPI / Swagger configuration
+â”‚   â”œâ”€â”€ database/
+â”‚   â”‚   â”œâ”€â”€ prisma.service.ts                     # PrismaClient wrapper with NestJS lifecycle hooks
+â”‚   â”‚   â””â”€â”€ prisma.module.ts                      # Global NestJS module exporting PrismaService
+â”‚   â”œâ”€â”€ dto/
+â”‚   â”‚   â””â”€â”€ ping.dto.ts                           # Sample validated DTO
+â”‚   â”œâ”€â”€ app.controller.ts                         # Root controller (/api/v1/health & /ping)
+â”‚   â”œâ”€â”€ app.module.ts                             # Root NestJS application module
+â”‚   â”œâ”€â”€ app.service.ts                            # Service providing health status & ping echo
+â”‚   â””â”€â”€ main.ts                                   # Application bootstrap & global pipeline setup
+â”œâ”€â”€ .env.example                                  # Documented environment variables template
+â”œâ”€â”€ nest-cli.json                                 # NestJS CLI build and schematic configuration
+â”œâ”€â”€ package.json                                  # Backend scripts & dependencies
+â”œâ”€â”€ tsconfig.json                                 # TypeScript compiler configuration (decorators enabled)
+â”œâ”€â”€ tsconfig.build.json                           # Production build TypeScript configuration
+â””â”€â”€ README.md
 ```
 
 ---
@@ -91,7 +91,7 @@ cp apps/api/.env.example apps/api/.env
 | `DIRECT_URL` | `string (URL)` | **Yes** (for migrations) | Migration connection URL: either direct PostgreSQL connection (`db.[project-ref].supabase.co:5432`) or Supabase Session Pooler (`aws-0-[region].pooler.supabase.com:5432`) used by Prisma CLI |
 | `SUPABASE_URL` | `string (URL)` | No | Supabase project REST API URL |
 | `SUPABASE_ANON_KEY` | `string` | No | Supabase anonymous public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | `string` | No | Supabase service-role key (server-side only — never expose to client) |
+| `SUPABASE_SERVICE_ROLE_KEY` | `string` | No | Supabase service-role key (server-side only â€” never expose to client) |
 | `SUPABASE_JWT_SECRET` | `string` | No | Secret used to verify Supabase JWT tokens |
 | `OPENAI_API_KEY` | `string` | No | OpenAI API key (AI features only) |
 | `ANTHROPIC_API_KEY` | `string` | No | Anthropic Claude API key (AI features only) |
@@ -115,13 +115,13 @@ The database schema (`prisma/schema.prisma`) enforces multi-tenant integrity at 
 
 ### 5.1. Relational Integrity Invariants
 
-1. **Project-Organization Scoping:** `Project` enforces `@@unique([id, organizationId])`. `ProjectMember` references `(projectId, organizationId) → Project(id, organizationId)`, guaranteeing that a project member can never point to a project belonging to another organization.
+1. **Project-Organization Scoping:** `Project` enforces `@@unique([id, organizationId])`. `ProjectMember` references `(projectId, organizationId) â†’ Project(id, organizationId)`, guaranteeing that a project member can never point to a project belonging to another organization.
 
-2. **Organization Member Scoping:** `ProjectMember` references `(organizationId, userId) → OrganizationMember(organizationId, userId)`. A user cannot participate in a project unless they already exist as a member of that project's organization.
+2. **Organization Member Scoping:** `ProjectMember` references `(organizationId, userId) â†’ OrganizationMember(organizationId, userId)`. A user cannot participate in a project unless they already exist as a member of that project's organization.
 
-3. **Task-Project-Organization Scoping:** `Task` references `(projectId, organizationId) → Project(id, organizationId)`, ensuring tasks are physically impossible to misallocate across tenants.
+3. **Task-Project-Organization Scoping:** `Task` references `(projectId, organizationId) â†’ Project(id, organizationId)`, ensuring tasks are physically impossible to misallocate across tenants.
 
-4. **Safe Task Assignee Deletion:** `Task.assigneeMemberId → ProjectMember.id` with `onDelete: SetNull`. When a member is removed from a project, `assigneeMemberId` is safely nulled without affecting the required `projectId` or `organizationId` columns.
+4. **Safe Task Assignee Deletion:** `Task.assigneeMemberId â†’ ProjectMember.id` with `onDelete: SetNull`. When a member is removed from a project, `assigneeMemberId` is safely nulled without affecting the required `projectId` or `organizationId` columns.
 
 ### 5.2. Custom SQL Integrity Constraints (applied during initial migration)
 
@@ -158,8 +158,8 @@ The database schema is augmented with production-hardened PostgreSQL triggers, c
 
 `PrismaService` (`src/database/prisma.service.ts`) extends `PrismaClient` and implements NestJS lifecycle hooks:
 
-- **`onModuleInit()`** — Called when the application boots. Opens the PostgreSQL connection pool. If `DATABASE_URL` is not configured, logs a warning and continues (graceful degradation). In development mode, subscribes to Prisma query events and logs every SQL query to the NestJS logger for debugging.
-- **`onModuleDestroy()`** — Called on graceful shutdown. Closes all open connections, preventing pool exhaustion on Supabase.
+- **`onModuleInit()`** â€” Called when the application boots. Opens the PostgreSQL connection pool. If `DATABASE_URL` is not configured, logs a warning and continues (graceful degradation). In development mode, subscribes to Prisma query events and logs every SQL query to the NestJS logger for debugging.
+- **`onModuleDestroy()`** â€” Called on graceful shutdown. Closes all open connections, preventing pool exhaustion on Supabase.
 
 `PrismaModule` (`src/database/prisma.module.ts`) is decorated with `@Global()`. This means `PrismaService` is available for injection in every NestJS module without needing to import `PrismaModule` explicitly.
 
@@ -183,7 +183,7 @@ export class OrganizationsService {
 }
 ```
 
-No additional `imports` array entry is needed in `OrganizationsModule` — `PrismaService` is global.
+No additional `imports` array entry is needed in `OrganizationsModule` â€” `PrismaService` is global.
 
 ### 6.3. Health Endpoint DB Status
 
@@ -205,7 +205,7 @@ The `GET /api/v1/health` endpoint now reports database connection status:
 | `database` value | Meaning |
 | :--- | :--- |
 | `"connected"` | `DATABASE_URL` is set and Prisma connected successfully |
-| `"not configured"` | `DATABASE_URL` is not set — development mode without DB |
+| `"not configured"` | `DATABASE_URL` is not set â€” development mode without DB |
 
 ---
 
@@ -220,15 +220,15 @@ The `GET /api/v1/health` endpoint now reports database connection status:
 
 | Phase | Step | Description | Status |
 | :--- | :--- | :--- | :--- |
-| Phase 1 | Step 1 | NestJS app bootstrap, health endpoint | ✅ Complete |
-| Phase 1 | Step 2 | Global ValidationPipe, HttpExceptionFilter, response transformer, Swagger | ✅ Complete |
-| Phase 2 | Step 2a | Prisma 6 installation, schema design, multi-tenant composite constraints | ✅ Complete |
-| Phase 2 | Step 2b | PrismaService + PrismaModule, DB integrity SQL documented, env config updated | ✅ Complete |
-| Phase 2 | Step 2c | Initial database migration deployed to Supabase PostgreSQL and verified | ✅ Complete |
-| Phase 2 | Step 2d | Supabase Auth profile-sync trigger (`on_auth_user_created`) installed and verified via Gmail test signup | ✅ Complete |
-| Phase 3 | Step 3a | Production Dependency Security Audit and Safe Remediation | 🔄 In Progress |
-| Phase 3 | Step 3b | Supabase ES256 JWT Authentication Foundation (AuthService, JwtAuthGuard, AuthModule) | ✅ Complete |
-| Phase 3 | Step 3c | Multi-Tenant Authorization Guards (OrgTenantGuard, ProjectTenantGuard, RolesGuard) | ⏳ Pending |
+| Phase 1 | Step 1 | NestJS app bootstrap, health endpoint | âœ… Complete |
+| Phase 1 | Step 2 | Global ValidationPipe, HttpExceptionFilter, response transformer, Swagger | âœ… Complete |
+| Phase 2 | Step 2a | Prisma 6 installation, schema design, multi-tenant composite constraints | âœ… Complete |
+| Phase 2 | Step 2b | PrismaService + PrismaModule, DB integrity SQL documented, env config updated | âœ… Complete |
+| Phase 2 | Step 2c | Initial database migration deployed to Supabase PostgreSQL and verified | âœ… Complete |
+| Phase 2 | Step 2d | Supabase Auth profile-sync trigger (`on_auth_user_created`) installed and verified via Gmail test signup | âœ… Complete |
+| Phase 3 | Step 3a | Production Dependency Security Audit and Safe Remediation | ðŸ”„ In Progress |
+| Phase 3 | Step 3b | Supabase ES256 JWT Authentication Foundation (AuthService, JwtAuthGuard, AuthModule) | âœ… Complete |
+| Phase 3 | Step 3c | Multi-Tenant Authorization Guards (OrgTenantGuard, ProjectTenantGuard, RolesGuard) | â³ Pending |
 
 ---
 
@@ -246,12 +246,12 @@ A security audit was conducted across the `@ai-workspace/api` dependency tree (N
 Zod was upgraded from `3.25.76` to `4.6.7`, resolving advisory [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (memory exhaustion on oversized constrained collections).
 
 **Changes made:**
-- `apps/api/package.json`: `"zod": "^3.24.1"` → `"zod": "^4.6.7"`.
-- `apps/api/src/config/env.config.ts`: `result.error.errors` → `result.error.issues` (Zod 4 API change).
+- `apps/api/package.json`: `"zod": "^3.24.1"` â†’ `"zod": "^4.6.7"`.
+- `apps/api/src/config/env.config.ts`: `result.error.errors` â†’ `result.error.issues` (Zod 4 API change).
 
 **Verified:**
-- `npm run build --workspace=@ai-workspace/api` — passed (zero TypeScript errors).
-- `npx prisma validate --schema prisma/schema.prisma` from `apps/api` — passed.
+- `npm run build --workspace=@ai-workspace/api` â€” passed (zero TypeScript errors).
+- `npx prisma validate --schema prisma/schema.prisma` from `apps/api` â€” passed.
 - Environment validation tested: defaults accepted, optional vars omitted, invalid URLs rejected, invalid PORT rejected, invalid NODE_ENV rejected, error messages use `result.error.issues` with readable path formatting.
 
 ### 9.3. Remaining Vulnerabilities (Pending Remediation)
@@ -356,9 +356,9 @@ The initial migration has been synthesized locally in `apps/api/prisma/migration
 
 ```
 apps/api/prisma/migrations/
-├── migration_lock.toml              # Identifies provider as "postgresql"
-└── 20261107120000_init/
-    └── migration.sql                # Complete atomic DDL (Prisma baseline + custom triggers)
+â”œâ”€â”€ migration_lock.toml              # Identifies provider as "postgresql"
+â””â”€â”€ 20261107120000_init/
+    â””â”€â”€ migration.sql                # Complete atomic DDL (Prisma baseline + custom triggers)
 ```
 
 ### 11.1. Transaction & Execution Architecture
@@ -535,3 +535,40 @@ This verified context serves as the trusted source of project identity and role 
   4. `ProjectTenantGuard`: Resolves route `:projectId`, verifies project membership, sets `request.projectContext`.
   5. `PermissionsGuard` / Task Authorization Guards: Evaluates granular action permissions.
 - **Current Enforcement Coverage:** `ProjectTenantGuard` is registered and exported from `AuthModule` as an isolated, composable component. It is **not registered globally** and is **not yet bound to nonexistent feature controllers**. Task authorization, RBAC permission evaluation, and ownership transfer logic belong to subsequent slices.
+
+---
+
+## 16. RBAC Permission Catalog & Safe Seed Infrastructure (Phase 3, Step 3c - Slice 5)
+
+To prepare for role-based authorization guards, the foundational permission catalog and safe seed infrastructure establish canonical platform roles and permission mappings.
+
+### 16.1. Approved Initial Permission Catalog
+Defined in `@ai-workspace/shared` (`packages/shared/src/contracts/permissions.contract.ts`):
+- **`projects:read_all`** (`PermissionCode.PROJECTS_READ_ALL`): Read-only access to all projects within the organization, bypassing explicit project membership.
+- **`projects:manage_all`** (`PermissionCode.PROJECTS_MANAGE_ALL`): Full management and governance over all projects within the organization (updates, status changes, archiving).
+
+### 16.2. Canonical System Role Matrix
+The seed infrastructure defines the mapping truth for the three platform system roles (`organization_id = NULL`, `is_system_role = TRUE`):
+
+| Canonical Role | `projects:read_all` | `projects:manage_all` |
+|:---|:---:|:---:|
+| **`OWNER`** | âœ… Yes | âœ… Yes |
+| **`ADMIN`** | âœ… Yes | âœ… Yes |
+| **`MEMBER`** | âŒ No | âŒ No |
+
+*Note: Task execution permissions are not part of this catalog because task execution strictly requires explicit `ProjectMember` membership with an appropriate `ProjectRole` (`LEAD`, `CONTRIBUTOR`), which organization permissions cannot bypass.*
+
+### 16.3. Seed Architecture & Multi-Tenant Safety Boundaries
+The seed script (`apps/api/prisma/seed.ts`) exports `seedRbac(prisma)` and adheres to strict safety invariants:
+1. **Transaction-Scoped Advisory Lock:** Acquires a PostgreSQL transaction-scoped advisory lock (`SELECT pg_advisory_xact_lock(8294719371059281);`) at the start of the transaction. This prevents concurrent seed executions from interleaving or racing during mapping deletion and recreation.
+2. **Partial-Index Conflict Resolution:** Upserts canonical system roles using parameterized `$executeRaw` targeting the partial unique index:
+   `ON CONFLICT (name) WHERE organization_id IS NULL DO UPDATE SET description = EXCLUDED.description`.
+   System role ownership (`is_system_role = TRUE`, `organization_id = NULL`) cannot be mutated.
+3. **Idempotent Permission Upsert:** Upserts the permission catalog targeting the unique `code` index.
+4. **Strict Canonical Isolation:** Resolves the exact IDs for `OWNER`, `ADMIN`, and `MEMBER`. Mapping deletion (`deleteMany`) is strictly filtered to these three resolved IDs. **Custom organization roles and non-canonical system roles are never touched or modified.**
+5. **Atomic Rollback:** Wrapped in a single interactive transaction (`prisma.$transaction`). Any resolution failure (e.g. failing to resolve all 3 roles or 2 permissions) or database error triggers an automatic, complete rollback.
+
+### 16.4. Testing & Execution
+- **Unit Testing:** `apps/api/test/rbac-seed.test.js` tests the seed algorithm, mapping isolation, empty-array guards, and rollback behavior using in-memory transactional mocks.
+- **Disposable PostgreSQL Integration Testing:** `apps/api/test/rbac-seed.integration.test.js` boots an isolated, ephemeral PostgreSQL cluster on a dynamic port in a temporary directory, runs the full database migration, tests the partial-index `ON CONFLICT` execution, idempotency, custom-role preservation, non-canonical role preservation, and concurrent advisory-lock serialization.
+- **Execution Warning:** Running `npm run prisma:seed` (`prisma db seed`) executes against the database configured in the active environment. **The seed script has NOT been executed against the live Supabase database.**

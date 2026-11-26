@@ -12,7 +12,11 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
-    "prisma:validate": "prisma validate --schema=./prisma/schema.prisma"
+    "prisma:validate": "prisma validate --schema=./prisma/schema.prisma",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@ai-workspace/shared": "*",

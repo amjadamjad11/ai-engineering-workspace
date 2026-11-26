@@ -8,4 +8,5 @@ export * from './contracts/organization.contract';
 export * from './contracts/project.contract';
 export * from './contracts/task.contract';
 export * from './contracts/ai.contract';
+export * from './contracts/permissions.contract';
 
