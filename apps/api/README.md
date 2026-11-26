@@ -426,3 +426,25 @@ Responses and server logs for all database exceptions are strictly sanitized:
   - All recognized Prisma exceptions (`PrismaClientKnownRequestError`, `PrismaClientUnknownRequestError`, `PrismaClientRustPanicError`, `PrismaClientInitializationError`, `PrismaClientValidationError`) are intercepted by a dedicated handler before the generic `instanceof Error` fallback.
   - Raw `exception.message`, database connection URLs, usernames, passwords, SQL statements, query parameters, and stack traces are **never** logged on ANY Prisma exception path.
   - Logs capture strictly safe metadata: a fixed message, a verified Prisma error code if available (e.g., `code: P1001`, `code: P1000`), and a safe error category (`known request error`, `initialization error`, `engine panic`, etc.).
+
+---
+
+## 13. User Account Status Verification Guard (Phase 3, Step 3c - Slice 2)
+
+As part of the multi-tenant authorization guard chain, `UserStatusGuard` verifies that the authenticated caller holds an active profile before any tenant- or project-level resources can be accessed:
+
+### 13.1. Architecture & Execution
+- **Location:** `apps/api/src/auth/guards/user-status.guard.ts`
+- **Dependency Injection:** Injects `Reflector` and `PrismaService`. Exported via `AuthModule`.
+- **Public Route Bypass:** Evaluates `@Public()` metadata via `Reflector.getAllAndOverride<boolean>()`. Bypasses database queries completely for public routes.
+- **Strict Identity Scoping:** Uses `request.user.id` verified by `JwtAuthGuard`. Request body or client-supplied IDs are never read. If `request.user` is missing or invalid, rejects safely with `401 Unauthorized` without querying the database.
+- **Minimal Query Surface:** Performs a scoped lookup (`prisma.profile.findUnique({ where: { id: user.id }, select: { status: true } })`) querying strictly the `status` enum field.
+
+### 13.2. Uniform Error Boundaries & Non-Disclosure
+- Requires `profile.status === UserStatus.ACTIVE`.
+- Rejects missing profiles, `SUSPENDED` profiles, and `INACTIVE` profiles with an identical HTTP 403 Forbidden error:
+  `"User account is inactive or unauthorized."`
+- Prevents user-enumeration or status-probing side-channels by not disclosing whether an account is non-existent vs. suspended vs. inactive.
+- Zero logging of PII, email, profile metadata, or token claims.
+- Database connectivity failures are allowed to bubble directly to `HttpExceptionFilter` (yielding HTTP 503 rather than false authorization failure or silent bypass).
+- **Scope Notice:** This guard verifies account status only. Tenant (`OrgTenantGuard`), project (`ProjectTenantGuard`), and granular RBAC guards are part of subsequent Step 3c slices and are not yet implemented. This guard is not globally registered.
