@@ -490,3 +490,48 @@ This verified context serves as the trusted source of tenant and role identity f
   3. `OrgTenantGuard`: Resolves route `:orgId`, verifies active membership, sets `request.orgContext`.
   4. `PermissionsGuard` / `ProjectTenantGuard`: Evaluates permissions and project ACLs.
 - **Current Enforcement Coverage:** `OrgTenantGuard` is registered and exported from `AuthModule` as an isolated, composable component. It is **not registered globally** and is **not yet bound to nonexistent feature controllers**. Project access, task execution, RBAC enforcement, and ownership transfer logic belong to subsequent slices.
+
+---
+
+## 15. Project Tenant Boundary Guard (Phase 3, Step 3c - Slice 4)
+
+As part of the multi-tenant isolation layer, `ProjectTenantGuard` establishes project-level tenant membership within an organization already authenticated by `OrgTenantGuard`:
+
+### 15.1. Architecture & Execution
+- **Location:** `apps/api/src/auth/guards/project-tenant.guard.ts`
+- **Context Contract:** `apps/api/src/auth/interfaces/project-context.interface.ts` (`ProjectContext`)
+- **Dependency Injection:** Injects `Reflector` and `PrismaService`. Exported via `AuthModule`.
+- **Public Route Bypass:** Respects `@Public()` metadata. If present, bypasses project checks without attaching unverified `projectContext`.
+- **Fail-Closed on Unauthenticated Context:** Rejects requests with missing or invalid `request.user` (including non-UUID values) with `401 Unauthorized` without querying the database.
+- **Fail-Closed on Missing Organization Context:** Requires prerequisite `request.orgContext` (with a valid UUID `organizationId`) established by `OrgTenantGuard`. Rejects missing/malformed context with `403 Forbidden` (`"Organization context required."`).
+- **Route Parameter Resolution:** Resolves project ID exclusively from `request.params.projectId`. Generic `:id` parameters, request bodies, query strings, and custom headers are strictly ignored and cannot override project context.
+- **UUID Pre-Validation:** Validates route parameter against UUID v4 regex before issuing database queries; invalid or missing IDs fail immediately with `404 Not Found`.
+
+### 15.2. Project Membership Enforcement & Non-Disclosure
+- **Database Query:** Uses composite unique constraint `uq_project_user: { projectId, userId }` and explicitly scopes `organizationId: orgContext.organizationId`.
+- **Dual Tenant Boundary Verification:** Explicitly verifies that both `member.organizationId` and `member.project.organizationId` match `orgContext.organizationId`.
+- **Soft-Delete Protection:** Inspects `project.deletedAt`. Rejects soft-deleted projects with `404 Not Found`.
+- **Non-Disclosure (Information Disclosure Mitigation):** Missing `ProjectMember` records, non-existent projects, cross-organization projects, and soft-deleted projects all return an identical `404 Not Found` (`"Project not found."`), preventing callers from discovering project existence across organizations or projects they lack membership in.
+- **Strict Membership Requirement:** Organization membership alone does not grant project access; callers must have an explicit `ProjectMember` record.
+- **Project Roles Supported:** Supports `ProjectRole.LEAD`, `ProjectRole.CONTRIBUTOR`, and `ProjectRole.VIEWER`.
+
+### 15.3. Verified Request Context (`request.projectContext`)
+Upon successful authorization, attaches an immutable, frozen `ProjectContext` to the request object:
+```typescript
+request.projectContext = Object.freeze({
+  projectId: string,
+  organizationId: string,
+  projectMemberId: string,
+  projectRole: ProjectRole,
+});
+```
+This verified context serves as the trusted source of project identity and role for downstream guards (e.g. `PermissionsGuard`, task authorization guards) and controllers, eliminating duplicate database lookups.
+
+### 15.4. Intended Guard Composition & Current Enforcement Coverage
+- **Intended Pipeline Order:**
+  1. `JwtAuthGuard`: Verifies ES256 JWT, sets `request.user`.
+  2. `UserStatusGuard`: Verifies user profile `status === ACTIVE`.
+  3. `OrgTenantGuard`: Resolves route `:orgId`, verifies active membership, sets `request.orgContext`.
+  4. `ProjectTenantGuard`: Resolves route `:projectId`, verifies project membership, sets `request.projectContext`.
+  5. `PermissionsGuard` / Task Authorization Guards: Evaluates granular action permissions.
+- **Current Enforcement Coverage:** `ProjectTenantGuard` is registered and exported from `AuthModule` as an isolated, composable component. It is **not registered globally** and is **not yet bound to nonexistent feature controllers**. Task authorization, RBAC permission evaluation, and ownership transfer logic belong to subsequent slices.
