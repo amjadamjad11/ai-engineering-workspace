@@ -1,4 +1,4 @@
-﻿# @ai-workspace/api â€” Backend Application
+# @ai-workspace/api â€” Backend Application
 
 **Domain:** Core Backend Modular Monolith  
 **Framework:** NestJS 10.x  
@@ -572,3 +572,20 @@ The seed script (`apps/api/prisma/seed.ts`) exports `seedRbac(prisma)` and adher
 - **Unit Testing:** `apps/api/test/rbac-seed.test.js` tests the seed algorithm, mapping isolation, empty-array guards, and rollback behavior using in-memory transactional mocks.
 - **Disposable PostgreSQL Integration Testing:** `apps/api/test/rbac-seed.integration.test.js` boots an isolated, ephemeral PostgreSQL cluster on a dynamic port in a temporary directory, runs the full database migration, tests the partial-index `ON CONFLICT` execution, idempotency, custom-role preservation, non-canonical role preservation, and concurrent advisory-lock serialization.
 - **Execution Warning:** Running `npm run prisma:seed` (`prisma db seed`) executes against the database configured in the active environment. **The seed script has NOT been executed against the live Supabase database.**
+
+---
+
+## 17. PermissionsGuard & `@RequirePermissions` (Phase 3, Step 3c - Slice 5C.2)
+
+Organization-level RBAC enforcement is provided by `PermissionsGuard` (`apps/api/src/auth/guards/permissions.guard.ts`) and the `@RequirePermissions(...permissions)` decorator (`apps/api/src/auth/decorators/require-permissions.decorator.ts`).
+
+### 17.1. Decorator & Semantics
+- `@RequirePermissions(...permissions: PermissionCode[])` attaches `REQUIRED_PERMISSIONS_KEY` metadata using `PermissionCode` from `@ai-workspace/shared`.
+- **ALL Semantics:** A route requires **all** listed permissions (`every()`).
+- **Fail-Closed Metadata:** Routes without `@RequirePermissions` pass through (`undefined` metadata). Empty, malformed, or unknown permission metadata throws `500 InternalServerErrorException`.
+
+### 17.2. Runtime Resolution & Boundaries
+- **Required Guard Ordering:** `@UseGuards(JwtAuthGuard, UserStatusGuard, OrgTenantGuard, PermissionsGuard)` (not globally registered).
+- **Direct DB Resolution (No Caching):** On every guarded request, `PermissionsGuard` queries `OrganizationMember -> Role -> RolePermission -> Permission` in PostgreSQL using `request.user.id` and `request.orgContext.organizationId`. JWT claims and `orgContext.roleName` are never trusted for authorization.
+- **Project Membership Boundary:** `PermissionsGuard` evaluates organization-level permissions only. `ProjectTenantGuard` remains a separate boundary and is not bypassed.
+- **Seed Status:** No live RBAC seed execution has occurred against Supabase.
