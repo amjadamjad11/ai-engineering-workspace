@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './database/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 
 /**
  * AppModule — Root Application Module
@@ -47,6 +48,9 @@ import { AuthModule } from './auth/auth.module';
 
     // AuthModule: Provides asymmetric ES256 Supabase JWT verification
     AuthModule,
+
+    // OrganizationsModule: Core multi-tenant organization CRUD (Phase 4 Step 4.2)
+    OrganizationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

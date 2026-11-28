@@ -604,3 +604,22 @@ Project-level access combining explicit `ProjectMember` membership with organiza
 ### 18.2. Guard Ordering & Non-Disclosure
 - **Required Guard Ordering:** `@UseGuards(JwtAuthGuard, UserStatusGuard, OrgTenantGuard, ProjectAccessGuard)`.
 - **Non-Disclosure:** Missing projects, cross-tenant projects, soft-deleted projects, and unauthorized non-member reads return `404 Not Found`. Known project members with insufficient governance roles return `403 Forbidden`.
+
+---
+
+## 19. Organizations Module (Phase 4, Step 4.2)
+
+Core organization lifecycle management is provided by `OrganizationsModule` (`apps/api/src/organizations/`).
+
+### 19.1. Endpoints & Authorization
+| Method & Path | Guards | Role Requirement |
+|---|---|---|
+| `POST /api/v1/organizations` | `JwtAuthGuard`, `UserStatusGuard` | Any active user (enrolled as `OWNER`) |
+| `GET /api/v1/organizations` | `JwtAuthGuard`, `UserStatusGuard` | Active member orgs only (`deletedAt: null`) |
+| `GET /api/v1/organizations/:orgId` | `JwtAuthGuard`, `UserStatusGuard`, `OrgTenantGuard` | Active organization member |
+| `PATCH /api/v1/organizations/:orgId` | `JwtAuthGuard`, `UserStatusGuard`, `OrgTenantGuard` | Canonical `OWNER` or `ADMIN` |
+| `DELETE /api/v1/organizations/:orgId` | `JwtAuthGuard`, `UserStatusGuard`, `OrgTenantGuard` | Canonical `OWNER` only (soft-delete) |
+
+### 19.2. Transaction & Error Behavior
+- `POST /api/v1/organizations` runs inside a single `prisma.$transaction`, looking up the canonical `OWNER` system role (`name = 'OWNER', isSystemRole = true, organizationId = null`), creating the organization, and enrolling the creator as an `ACTIVE` `OrganizationMember`.
+- Duplicate `slug` (`P2002`) maps to `409 Conflict`. Empty `PATCH` payloads are rejected with `400 Bad Request`.
