@@ -589,3 +589,18 @@ Organization-level RBAC enforcement is provided by `PermissionsGuard` (`apps/api
 - **Direct DB Resolution (No Caching):** On every guarded request, `PermissionsGuard` queries `OrganizationMember -> Role -> RolePermission -> Permission` in PostgreSQL using `request.user.id` and `request.orgContext.organizationId`. JWT claims and `orgContext.roleName` are never trusted for authorization.
 - **Project Membership Boundary:** `PermissionsGuard` evaluates organization-level permissions only. `ProjectTenantGuard` remains a separate boundary and is not bypassed.
 - **Seed Status:** No live RBAC seed execution has occurred against Supabase.
+
+---
+
+## 18. ProjectAccessPolicy & `ProjectAccessGuard` (Phase 3, Step 3c - Slice 5D.2)
+
+Project-level access combining explicit `ProjectMember` membership with organization-level permissions is enforced by `ProjectAccessPolicy` (`apps/api/src/auth/policies/project-access.policy.ts`), `ProjectAccessGuard` (`apps/api/src/auth/guards/project-access.guard.ts`), and `@RequireProjectAccess(mode)` (`apps/api/src/auth/decorators/require-project-access.decorator.ts`).
+
+### 18.1. Access Modes
+- **`READ`:** Allowed for any active `ProjectMember` (`LEAD`, `CONTRIBUTOR`, `VIEWER`), OR organization roles with `projects:read_all` or `projects:manage_all`. Archived projects remain readable; soft-deleted projects return `404`.
+- **`GOVERN` & `MANAGE_MEMBERS`:** Allowed for `ProjectMember` with `LEAD` role, OR organization roles with `projects:manage_all`. Blocked (`403`) on `ARCHIVED` projects.
+- **Task Execution Boundary:** Task execution remains strictly governed by `ProjectTenantGuard` (`LEAD` or `CONTRIBUTOR` only). Organization-level permissions (`projects:read_all`, `projects:manage_all`) never grant `ProjectMember` membership or task execution.
+
+### 18.2. Guard Ordering & Non-Disclosure
+- **Required Guard Ordering:** `@UseGuards(JwtAuthGuard, UserStatusGuard, OrgTenantGuard, ProjectAccessGuard)`.
+- **Non-Disclosure:** Missing projects, cross-tenant projects, soft-deleted projects, and unauthorized non-member reads return `404 Not Found`. Known project members with insufficient governance roles return `403 Forbidden`.

@@ -5,6 +5,8 @@ import { UserStatusGuard } from './guards/user-status.guard';
 import { OrgTenantGuard } from './guards/org-tenant.guard';
 import { ProjectTenantGuard } from './guards/project-tenant.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { ProjectAccessGuard } from './guards/project-access.guard';
+import { ProjectAccessPolicy } from './policies/project-access.policy';
 
 @Module({
   providers: [
@@ -14,6 +16,8 @@ import { PermissionsGuard } from './guards/permissions.guard';
     OrgTenantGuard,
     ProjectTenantGuard,
     PermissionsGuard,
+    ProjectAccessPolicy,
+    ProjectAccessGuard,
   ],
   exports: [
     AuthService,
@@ -22,6 +26,8 @@ import { PermissionsGuard } from './guards/permissions.guard';
     OrgTenantGuard,
     ProjectTenantGuard,
     PermissionsGuard,
+    ProjectAccessPolicy,
+    ProjectAccessGuard,
   ],
 })
 export class AuthModule { }
